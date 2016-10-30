@@ -1,0 +1,702 @@
+---
+title: "STATS701 Homework 3"
+author: "Jordan Farrer"
+date: '2016-10-30'
+output:
+  html_notebook:
+    code_folding: hide
+    css: style.css
+    number_sections: yes
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+
+Full repo: [https://github.com/jrfarrer/stats701_hw3/](https://github.com/jrfarrer/stats701_hw3/)
+
+Published file: [https://jrfarrer.github.io/stats701_hw3/](https://jrfarrer.github.io/stats701_hw3/)
+
+
+```{r setup, include=FALSE}
+# Set options for the rmarkdown file
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align = 'center', width = 100)
+```
+
+```{r setup2}
+# Set the seed for reproducibility
+set.seed(44)
+# Set the locale of the session so languages other than English can be used
+invisible(Sys.setlocale("LC_ALL", "en_US.UTF-8"))
+# Prevent printing in scientific notation
+options(digits = 4, width = 220)
+
+# Create a logger function
+logger <- function(msg, level = "info", file = log_file) {
+    cat(paste0("[", format(Sys.time(), "%Y-%m-%d %H:%M:%S.%OS"), "][", level, "] ", msg, "\n"), file = stdout())
+}
+
+# Set the project directory
+base_dir <- ''
+data_dir <- paste0(base_dir, "data/")
+code_dir <- paste0(base_dir, "code/")
+viz_dir <- paste0(base_dir, "viz/")
+
+dir.create(data_dir, showWarnings = FALSE)
+dir.create(code_dir, showWarnings = FALSE)
+dir.create(viz_dir, showWarnings = FALSE)
+```
+
+```{r Load Packages, include = FALSE}
+# Create a function that will be used to load/install packages
+fn_load_packages <- function(p) {
+  if (!is.element(p, installed.packages()[,1]) || (p =="DT" && !(packageVersion(p) > "0.1"))) {
+    if (p == "DT") {
+      devtools::install_github('rstudio/DT')
+    } else {
+      install.packages(p, dep = TRUE, repos = 'http://cran.us.r-project.org')
+    }
+  }
+  a <- suppressPackageStartupMessages(require(p, character.only = TRUE))
+  if (a) {
+    logger(paste0("Loaded package ", p, " version ", packageVersion(p)))
+  } else {
+    logger(paste0("Unable to load packages ", p))
+  }
+}
+# Create a vector of packages
+packages <- c('tidyverse','ggthemes','knitr','extrafont','broom','aod','leaps','bestglm','glmnet',
+              'GGally','pander','descr','plotROC', 'ROCR','pROC', 'corrplot','caret',
+              'highcharter','viridisLite','stringr','readr')
+# Use function to load the required packages
+invisible(lapply(packages, fn_load_packages))
+```
+
+```{r Import Fonts}
+# To the font second font, run the following two lines of code and add name of user to vector
+# system(paste0("cp -r ",viz_dir,"fonts/. ~/Library/Fonts/")) # instantaneous
+# font_import() # takes approximately 5-10 min
+users_v <- c("Jordan")
+```
+
+```{r Create palette and theme}
+# Create a color palette
+pal538 <- ggthemes_data$fivethirtyeight
+
+# Create a theme to use throughout the analysis
+theme_jrf <- function(base_size = 8, base_family = ifelse(Sys.info()[['user']] %in% users_v, "DecimaMonoPro", "Helvetica")) {
+    theme(
+        plot.background = element_rect(fill = "#F0F0F0", colour = "#606063"), 
+        panel.background = element_rect(fill = "#F0F0F0", colour = NA), 
+        panel.border = element_blank(),
+        panel.grid.major =   element_line(colour = "#D7D7D8"),
+        panel.grid.minor =   element_line(colour = "#D7D7D8", size = 0.25),
+        panel.margin =       unit(0.25, "lines"),
+        panel.margin.x =     NULL,
+        panel.margin.y =     NULL,
+        axis.ticks.x = element_blank(), 
+        axis.ticks.y = element_blank(),
+        axis.title = element_text(colour = "#A0A0A3"),
+        axis.text.x = element_text(vjust = 1, colour = '#3C3C3C',
+                                   family = ifelse(Sys.info()[['user']] %in% users_v,"DecimaMonoPro", "Helvetica")),
+        axis.text.y = element_text(hjust = 1, colour = '#3C3C3C',
+                                    family = ifelse(Sys.info()[['user']] %in% users_v,"DecimaMonoPro", "Helvetica")),
+        legend.background = element_blank(),
+        legend.key = element_blank(), 
+        plot.title = element_text(face = 'bold', colour = '#3C3C3C', hjust = 0),
+        text = element_text(size = 9, family = ifelse(Sys.info()[['user']] %in% users_v,"DecimaMonoPro", "Helvetica")),
+        title = element_text(family = ifelse(Sys.info()[['user']] %in% users_v,"DecimaMonoPro", "Helvetica"))
+        
+    )
+}
+```
+
+# ISLR Problem
+
+## A
+
+We create 100 $X$ and $\epsilon$ variables using `rnorm`.
+
+```{r}
+X = rnorm(100)
+eps = rnorm(100)
+```
+
+## B
+
+We select $\beta_0 = 1$ $\beta_1 = 2$, $\beta_2 = -1.4$, $\beta_3 = 0.6$.
+
+```{r}
+beta0 = 1
+beta1 = 2.5
+beta2 = -3.4
+beta3 = 0.9
+Y = beta0 + beta1 * X + beta2 * X^2 + beta3 * X^3 + eps
+```
+
+
+## C
+
+We use `regsubsets` with exhaustive search.
+
+```{r}
+data_df = data.frame(y = Y, x = X)
+```
+
+```{r}
+fn_regsubsets_plots <- function(fit_obj, elbow = NULL) {
+
+    regsubsets_summary <- summary(fit_obj)
+    
+    g <- 
+    data_frame(
+          predictors = 1:length(regsubsets_summary$cp)
+        , cp = regsubsets_summary$cp
+        , bic = regsubsets_summary$bic
+        , adjr2 = regsubsets_summary$adjr2
+    ) %>%
+        gather(metric, value, -predictors) %>%
+        mutate(metric = factor(metric, levels = c("cp","bic","adjr2"))) %>%
+        ggplot(aes(x = predictors, y = value, colour = metric)) +
+        facet_grid(metric ~ ., scale = "free_y", switch = "y", 
+                   labeller = ggplot2::labeller(metric = c(cp = "Cp", bic = "BIC", adjr2 = "Adjusted R^2"))) +
+        geom_line() + geom_point() +
+        geom_label(data = data_frame(
+            predictors = c(which.min(regsubsets_summary$cp), which.min(regsubsets_summary$bic),
+                           which.max(regsubsets_summary$adjr2))
+            , metric = factor(c("cp","bic","adjr2"), levels = c("cp","bic","adjr2"))
+            , value = c(min(regsubsets_summary$cp), min(regsubsets_summary$bic), max(regsubsets_summary$adjr2))
+            , label = paste0("Optimal\nd=", c(which.min(regsubsets_summary$cp), which.min(regsubsets_summary$bic),
+                                              which.max(regsubsets_summary$adjr2)))
+            , vjust = c(-.5, -.5, 1.25)
+        ), aes(x = predictors, y = value, label = label, vjust = vjust), family = "DecimaMonoPro") +
+        theme_jrf() + 
+        labs(title = paste0(stringr::str_to_title(regsubsets_summary$obj$method), " Search"), 
+             x = "# of Predictors", y = NULL) +
+        scale_colour_manual(guide = FALSE, values = c(pal538['red'][[1]], pal538['green'][[1]], pal538['blue'][[1]]))
+    
+    if (!is.null(elbow)) {
+        g <- g + geom_vline(xintercept = elbow, alpha = 0.5) + 
+            geom_label(data = data_frame(x = elbow, y = 300, metric = factor(c("cp"), levels = c("cp","bic","adjr2")), 
+                label = "Elbow with\n3 predictors"), aes(x=x,y=y,label=label), colour = "black", hjust = -.1,
+               family = "DecimaMonoPro")
+    }
+    
+    print(g)
+}
+        
+```
+
+```{r results = 'asis'}
+fit1 = regsubsets(y ~ poly(x, 10, raw = TRUE), data = data_df, nvmax = 10, method = 'exhaustive')
+fit1_summary = summary(fit1)
+
+# Find the model size for best cp, BIC and adjr2
+data_frame(
+    Cp = which.min(fit1_summary$cp)
+    , BIC = which.min(fit1_summary$bic)
+    , `Adj R^2` = which.max(fit1_summary$adjr2)
+) %>%
+    pander(caption = "Exhaustive Search: Optimal Information Criterion")
+```
+
+```{r}
+fn_regsubsets_plots(fit1)
+```
+
+Based on the table and plots above for Exhaustive Search, the best model is
+
+$$`r paste0("Y = ",paste0(c("\\beta_0", paste0("\\beta_{",1:10,"}X^",1:10))[fit1_summary$which[which.min(fit1_summary$cp), ]], collapse = " + "))`$$
+
+
+## D
+
+```{r results = 'asis'}
+fit2 = regsubsets(y ~ poly(x, 10, raw = TRUE), data = data_df, nvmax = 10, method = 'backward')
+fit2_summary = summary(fit2)
+
+# Find the model size for best cp, BIC and adjr2
+data_frame(
+    Cp = which.min(fit2_summary$cp)
+    , BIC = which.min(fit2_summary$bic)
+    , `Adj R^2` = which.max(fit2_summary$adjr2)
+) %>%
+    pander(caption = "Backwards Search: Optimal Information Criterion")
+```
+
+```{r}
+fn_regsubsets_plots(fit2)
+```
+
+Based on the table and plots above for Backwards Search, the best model is
+
+$$`r paste0("Y = ",paste0(c("\\beta_0", paste0("\\beta_{",1:10,"}X^",1:10))[fit2_summary$which[which.min(fit2_summary$cp), ]], collapse = " + "))`$$
+
+```{r results = 'asis'}
+fit3 = regsubsets(y ~ poly(x, 10, raw = TRUE), data = data_df, nvmax = 10, method = 'forward')
+fit3_summary = summary(fit3)
+
+# Find the model size for best cp, BIC and adjr2
+data_frame(
+    Cp = which.min(fit3_summary$cp)
+    , BIC = which.min(fit3_summary$bic)
+    , `Adj R^2` = which.max(fit3_summary$adjr2)
+) %>%
+    pander(caption = "Forward Search: Optimal Information Criterion")
+```
+
+```{r}
+fn_regsubsets_plots(fit3)
+```
+
+Based on the table and plots above for Forwards Search, the best model is
+
+$$`r paste0("Y = ",paste0(c("\\beta_0", paste0("\\beta_{",1:10,"}X^",1:10))[fit3_summary$which[which.min(fit3_summary$cp), ]], collapse = " + "))`$$
+
+
+We see that for the $\beta$s chosen, backwards and forwards search produces the same optimal model.
+
+## E
+```{r}
+xmat = model.matrix(y ~ poly(x, 10, raw = T), data = data_df)[, -1]
+mod.lasso = cv.glmnet(xmat, Y, alpha = 1)
+best.lambda = mod.lasso$lambda.min
+
+```
+
+The optimal value of $\lambda$ is `r best.lambda`.
+
+```{r}
+fn_plot_cv_glmnet <- function(cv_glmnet, main) {
+
+    data <- 
+        tidy(cv_glmnet) %>% as_tibble() %>%
+        mutate(log_lambda = log(lambda)) 
+    
+    data2 <-
+        data %>%
+        filter(row_number() %% 4 == 0)
+    
+    data3 <-
+        data_frame(
+            log_lambda = c(log(cv_glmnet$lambda.min), log(cv_glmnet$lambda.1se))
+            , name = c("Min", "1se")
+        )
+    
+    ggplot() +
+        geom_errorbar(data = data, aes(x = log_lambda, ymin = conf.low, ymax = conf.high), 
+                      colour = pal538['dkgray'][[1]], alpha = 0.6) +
+        geom_point(data = data, aes(x = log_lambda, y = estimate), colour = pal538['red'][[1]]) +
+        geom_vline(xintercept = log(cv_glmnet$lambda.min), colour = pal538['dkgray'][[1]], alpha = 0.6) +
+        geom_vline(xintercept = log(cv_glmnet$lambda.1se), colour = pal538['dkgray'][[1]], alpha = 0.6) + 
+        theme_jrf() +
+        labs(title = main, x = expression(log(lambda)), y = cv_glmnet$name) +
+        geom_text(data = data2, aes(x = log_lambda, y = Inf, label = nzero), vjust = 1, colour = '#3C3C3C',
+                  family = ifelse(Sys.info()[['user']] %in% users_v,"DecimaMonoPro", "Helvetica"),
+                  size = 2.25) +
+        geom_label(data = data3, aes(x = log_lambda, y = Inf, label = name), vjust = 5, colour = '#3C3C3C',
+                   family = ifelse(Sys.info()[['user']] %in% users_v,"DecimaMonoPro", "Helvetica"))
+}
+```
+
+```{r}
+fn_plot_cv_glmnet(mod.lasso, "Lasso Model on Simulated Data")
+```
+
+
+```{r results = 'asis'}
+best.model <- glmnet(xmat, Y, alpha = 1)
+coeffiecients <- predict(best.model, s = best.lambda, type = "coefficients")
+coeffiecients_df <-
+    data_frame(
+    coeffiecient = names(coeffiecients[, 1])
+    , estimate = coeffiecients[, 1]
+    ) %>%
+    mutate(estimate = ifelse(estimate == 0, NA, estimate)) %>%
+    mutate(coeffiecient = paste0("$\\beta_{", row_number() - 1, "}$"))
+
+betas_above_3 <- 
+    coeffiecients_df %>% 
+    filter(is.na(estimate) & row_number() > 4) %>% 
+    select(coeffiecient) %>% 
+    unlist() %>% 
+    stringr::str_extract("(\\d+)")
+    
+coeffiecients_df %>%
+    pander(missing = "")
+```
+
+Lasso picks `r paste0(paste0("$X_{",betas_above_3,"}$"), collapse = ",")` over $X_3$.
+
+## F
+
+We select $\beta_7 = 7$ and regsubsets with Exhaustive Search.
+
+```{r}
+beta7 = 7
+
+Y2 = beta0 + beta7 * X^7 + eps
+```
+
+
+```{r}
+data_df2 <- data_frame(y = Y2, x = X)
+fit7 = regsubsets(y ~ poly(x, 10, raw = TRUE), data = data_df2, nvmax = 10, method = 'exhaustive')
+
+fn_regsubsets_plots(fit7)
+```
+
+For a model with one predictor, the estimates is very close to the actual coefficients:
+
+$$Y = `r coef(fit7, 1)[[1]]` + `r coef(fit7, 1)[[2]]`X^7$$
+
+Now using lasso,
+
+```{r}
+xmat2 = model.matrix(y ~ poly(x, 10, raw = T), data = data_df2)[, -1]
+mod.lasso2 = cv.glmnet(xmat2, Y2, alpha = 1)
+best.lambda2 = mod.lasso2$lambda.min
+fn_plot_cv_glmnet(mod.lasso2, "Lasso Model on Simulated Data")
+```
+
+
+```{r results= 'asis'}
+best.model2 = glmnet(xmat2, Y, alpha = 1)
+coeffiecients2 = predict(best.model2, s = best.lambda2, type = "coefficients")
+coeffiecients_df2 <-
+    data_frame(
+    coeffiecient = names(coeffiecients2[, 1])
+    , estimate = coeffiecients2[, 1]
+    ) %>%
+    mutate(estimate = ifelse(estimate == 0, NA, estimate)) %>%
+    mutate(coeffiecient = paste0("$\\beta_{", row_number() - 1, "}$"))
+
+betas_above_3 <- coeffiecients_df2 %>% filter(is.na(estimate) & row_number() > 3) %>% select(coeffiecient) %>% unlist() %>% stringr::str_extract("(\\d+)")
+    
+coeffiecients_df2 %>%
+    pander(missing = "")
+```
+
+Lasso only selects the intercept term and not $X^7$ and the intercept is quite off.
+
+# Crime Data
+
+## Part 1
+
+The map below shows the mean of the `pct.unemployed` variable in `CrimeData.csv`. This metric does not make much sense because it the average of a percent of a subset of communities in the US. This is to demonstrate the functionality.
+
+```{r}
+crime_data <- readr::read_csv(paste0(data_dir, "CrimeData.csv"), na = c("","?"))
+
+
+
+data("state")
+data("usgeojson")
+
+df <- 
+    data_frame(State = rownames(state.x77), abb = state.abb) %>% 
+    inner_join(
+        crime_data %>%
+            group_by(state) %>%
+            summarise(mean_pct.unemployed = mean(pct.unemployed))
+        , by = c("abb" = "state")
+    )
+
+
+highchart() %>%
+  hc_title(text = "Mean of Percentage of Unemployed") %>%
+  hc_subtitle(text = "Source: CrimeData.csv") %>%
+  hc_add_series_map(usgeojson, df, name = "Per Capita Income (1974)",
+                    value = "mean_pct.unemployed", joinBy = c("woename", "State"),
+                    dataLabels = list(enabled = TRUE,
+                                      format = '{point.properties.postalcode}')) %>%
+  hc_colorAxis(min = min(df$Income)) %>%
+  hc_legend(valueDecimals = 0, valueSuffix = "%") %>%
+  hc_tooltip(valuePrefix = "%", valueDecimals = 1) %>%
+  hc_mapNavigation(enabled = TRUE) %>%
+  hc_credits(enabled = TRUE, text = "Inspired by http://jkunst.com/highcharter/highmaps.html", 
+             href = "http://jkunst.com/highcharter/highmaps.html")
+```
+
+
+The map below shows the population by county from the `CrimeData.csv` dataset. There are many communities in the dataset that are missing county codes and many counties are missing all the communities. Again, this is to demonstrate the functionality.
+
+```{r}
+data("uscountygeojson")
+
+crime_data2 <- 
+    crime_data %>%
+    filter(county != "?") %>%
+    group_by(state, county) %>%
+    summarise(population = sum(population)) %>%
+    mutate(code = paste0('us-',tolower(state),'-', stringr::str_pad(county, 3, side = "left", pad = "0"))) %>%
+    select(state, county, code, population)
+
+n <- 16
+dstops <- data.frame(q = 0:n/n, c = rev(substring(viridis(n + 1, option = "B"), 0, 7)))
+dstops <- list_parse2(dstops)
+
+highchart() %>% 
+  hc_title(text = "Population by County") %>%
+  hc_subtitle(text = "Source: CrimeData.csv") %>%
+  hc_add_series_map(map = uscountygeojson, df = crime_data2,
+                    value = "population", joinBy = c("code", "code"),
+                    name = "Population", borderWidth = 0.1) %>% 
+  hc_colorAxis(stops = dstops, min = min(crime_data2$population)) %>% 
+  hc_legend(layout = "vertical", reversed = TRUE,
+            floating = TRUE, align = "right") %>% 
+  hc_mapNavigation(enabled = TRUE, align = "right") %>% 
+  hc_tooltip(valueDecimals = 0) %>%
+  hc_credits(enabled = TRUE, text = "Inspired by http://jkunst.com/highcharter/highmaps.html", 
+             href = "http://jkunst.com/highcharter/highmaps.html")
+```
+
+## Part 2
+
+```{r}
+var_names_out <- c("num.urban","other.percap","num.underpov","num.vacant.house","num.murders","num.rapes",
+                   "num.robberies","num.assaults","num.burglaries","num.larcenies","num.autothefts","num.arsons")
+
+names_other_crimes <- c("murder.perpop", "rapes.perpop","robberies.perpop","assaults.perpop","nonviolentcrimes.perpop",
+                        "burglaries.perpop","larcenies.perpop","autothefts.perpop","arsons.perpop")
+
+data_cafl <- 
+    crime_data %>% 
+    select(c(2,6:103,121,122,123, 130:147)) %>%
+    select(-one_of(c(var_names_out, names_other_crimes))) %>%
+    filter(state %in% c("FL","CA")) %>%
+    filter(complete.cases(.))
+```
+
+From the `CrimeData.csv` dataset we extract the data for only the states CA and FL. In addition, we select only variables from following the process used in Lecture 6 and remove missing values. As a result we have `r nrow(data_cafl)` observation and `r ncol(data_cafl)` variables.
+
+### (A)
+
+We perform 10-fold cross-validation for glmnet with $\alpha$ = 0.99. 
+
+```{r}
+x_matrix_flca <- model.matrix(violentcrimes.perpop ~ ., data = data_cafl)[, -1]
+
+y_violent_crimes <- 
+    data_cafl %>% 
+    select(violentcrimes.perpop) %>% 
+    unlist()
+
+fit_cafl_1 <- cv.glmnet(x_matrix_flca, y_violent_crimes, alpha = .99, nfolds = 10)
+
+fn_plot_cv_glmnet(fit_cafl_1, expression("FL & CA Crime Data: ElasticNet "~ alpha ~"= 0.99"))
+```
+
+We see that the mean cross-validated error is minimized when $\lambda = e^{`r log(fit_cafl_1$lambda.min)`} = `r fit_cafl_1$lambda.min`$ and there are `r tidy(fit_cafl_2) %>% filter(estimate != 0 & term != "(Intercept)") %>% nrow()` non-zero estimates of $\beta_i$. We will use this with glmnet to create new fit.
+
+```{r results = 'asis'}
+fit_cafl_2 <- glmnet(x_matrix_flca, y_violent_crimes, alpha = .99, lambda = fit_cafl_1$lambda.min)
+
+relevent_vars <- 
+    tidy(fit_cafl_2) %>% 
+    filter(estimate != 0 & term != "(Intercept)")
+
+
+regsubsets_cafl1 <- 
+    regsubsets(as.formula(paste0("violentcrimes.perpop ~ ", paste0(relevent_vars$term, collapse = " + "))),
+                                          nvmax = 15, method = "exhaustive", data = data_cafl)
+
+summary(regsubsets_cafl1)$outmat %>% 
+    as_tibble() %>% 
+    pander(missing = "", split.table = Inf)
+```    
+
+The table above shows which of the five varaibles would be present in the optimal model at each # of predictors. For example, note that `pct.house.vacant` would not be present if only 4 variables were used. We create a plot to show the optimal # of predictors based on Cp, BIC, and Adjusted $R^2$.
+
+
+```{r}
+fn_regsubsets_plots(regsubsets_cafl1)
+```
+
+The optimal model based ont the BIC criteria uses 4 predictors, but based on Cp the optimal model would include 5 predictors. We will only create a model if the $p$-values are less than 0.05. We'll create this model and note that **all variables are significant at the 0.05 level**. However, the variable `pct.house.vacant` is just barely significant.
+
+
+```{r results = 'asis'}
+fit_cafl_3 <- lm(as.formula(paste0("violentcrimes.perpop ~ ", 
+                    paste0(summary(regsubsets_cafl1)$obj$xnames[-1], collapse = " + "))), data = data_cafl)
+tidy(fit_cafl_3) %>% arrange(p.value) %>% pander()
+```
+
+We remove `pct.house.vacant`, fit another linear model, and see all the variables are signifcant at a 0.01 confidence level. 
+
+```{r results = 'asis'}
+cafl_terms <- 
+    tidy(fit_cafl_3) %>%
+    filter(term != "(Intercept)") %>%
+    arrange(p.value) %>%
+    select(term) %>%
+    unlist()
+
+fit_cafl_4 <- lm(as.formula(paste0("violentcrimes.perpop ~ ", paste0(cafl_terms[-5], collapse = " + "))), data = data_cafl)
+
+tidy_cafl_1 <- tidy(fit_cafl_4) %>% arrange(p.value)
+tidy_cafl_1 %>% pander()
+```
+
+Though the requirements of the problem state to include variables with $p$-values less than 0.05, in order to create a parsimonious linear model we will exclude the variable `pct.house.vacant` as this does provide much more explanatory power. The BIC criteria, which has a much harsher complexity penalty than Cp, indicates 4 variables is optimal and we will follow this heuristic. Moreover, we believe in the maxim that simpler models are always better.
+
+The final model is 
+
+$$violentcrimes.perpop = `r tidy_cafl_1[1, 2]` + 
+`r tidy_cafl_1[2, 2]``r tidy_cafl_1[2, 1]` +
+`r tidy_cafl_1[3, 2]``r tidy_cafl_1[3, 1]` +
+`r tidy_cafl_1[4, 2]``r tidy_cafl_1[4, 1]` + \\
+`r tidy_cafl_1[5, 2]``r tidy_cafl_1[5, 1]`$$
+
+
+Holding all other variables constant in a community,
+
++ An increase in 1% of **families with kids and 2 parents**, decreases the number of violent crimes per person by **`r tidy_cafl_1[2, 2]`**.
++ An increase in 1% of **families with kids with unmarried parents**, increases the number of violent crimes per person by **`r tidy_cafl_1[3, 2]`**.
++ An increase in 1% of **black residents**, increases the number of violent crimes per person by **`r tidy_cafl_1[4, 2]`**.
++ An increase in 1% of **the number of shelters**, increases the number of violent crimes per person by **`r tidy_cafl_1[5, 2]`**.
+
+### (B)
+
+In order to cross-validate lambdas and alphas, we use the [caret](http://topepo.github.io/caret/index.html) package which generalizes model training and testing. Two important inputs to the `train` function are a `trainControl` and `tuneGrid`. In the `trainControl` we specify 10-fold cross-validation, repeated 5 times. As both lambdas and alphas are statistics it is important to use repeated cross-validation in this scenario. In the `tuneGrid` we specify which alphas and lambdas to attempt. For alphas, we use a sequence between 0 and 1 and for lambdas we use the original lambdas found in part (A).
+
+We then plot the alpha and lambda combinations against the mean-squared error (MSE) and highlight the combination that minimizes the MSE.
+
+
+```{r}
+glmnetTrControl <- 
+    trainControl(
+		  method = "repeatedCV"
+		, number = 10
+		, repeats = 5
+	)
+
+glmnetGrid <- 
+    expand.grid(
+          alpha = seq(0, 1, 0.1)
+        , lambda = fit_cafl_1$lambda
+    )
+
+set.seed(42)
+model <- 
+    train(
+          violentcrimes.perpop ~ .
+        , data = data_cafl
+        , method = 'glmnet'
+    	, tuneGrid = glmnetGrid
+    	, trControl = glmnetTrControl
+    )
+
+model_results <- 
+    model$results %>% 
+        as_tibble() %>%
+        mutate(
+            log_lambda = log(lambda)
+            , alpha = round(alpha, 1)
+            , MSE = RMSE^2
+        )
+
+minimized <- model_results %>% arrange(RMSE) %>% filter(row_number() == 1)
+
+data_cafl2 <-
+    data_cafl %>%
+    select(one_of(c("violentcrimes.perpop"), predictors(model)))
+
+x_matrix_flca2 <- model.matrix(violentcrimes.perpop ~ ., data = data_cafl2)[, -1]
+
+glmnet_fit1 <- glmnet(x_matrix_flca2, y_violent_crimes, alpha = model$bestTune$alpha, lambda = model$bestTune$lambda)
+
+tidy_cafl_2 <- tidy(glmnet_fit1)
+
+ggplot() +
+theme_jrf() + 
+geom_line(data = model_results, aes(x = log_lambda, y = MSE, 
+                                    group = as.factor(alpha), colour = as.factor(alpha))) +
+geom_point(aes(x = minimized$log_lambda, y = minimized$MSE), colour = pal538['dkgray'][[1]]) +
+labs(title = "Cross Validation of Alpha and Lambda", x = expression(log(lambda)), 
+     y = "Mean-Squared Error (Repeated Cross-Validation)") +
+scale_colour_discrete(guide = guide_legend(title = expression(alpha))) +
+geom_segment(aes(x = minimized$log_lambda, xend = minimized$log_lambda, y = 500^2, yend = 390^2), 
+             arrow = arrow(length = unit(0.03, "npc")), colour = pal538['dkgray'][[1]], alpha = 0.5) +
+geom_label(data = data_frame(x = minimized$log_lambda, y = 500^2, label = "Alpha and Lambda\nthat Minimize MSE"), 
+    aes(x = x, y = y, label = label), colour = pal538['dkgray'][[1]], family = "DecimaMonoPro")
+```
+
+This model uses `r length(predictors(model))` predictors: `r predictors(model) %>% pander()`. The optimal parameters are
+
+$$\alpha = `r model$bestTune$alpha`$$
+$$\lambda = `r model$bestTune$lambda`$$
+
+and the equation is 
+
+$$violentcrimes.perpop = `r tidy_cafl_2[1, 3]` + 
+`r tidy_cafl_2[2, 3]``r tidy_cafl_2[2, 1]` +
+`r tidy_cafl_2[3, 3]``r tidy_cafl_2[3, 1]` +
+`r tidy_cafl_2[4, 3]``r tidy_cafl_2[4, 1]` + \\
+`r tidy_cafl_2[5, 3]``r tidy_cafl_2[5, 1]` +
+`r tidy_cafl_2[6, 3]``r tidy_cafl_2[6, 1]` +
+`r tidy_cafl_2[7, 3]``r tidy_cafl_2[7, 1]` + \\
+`r tidy_cafl_2[8, 3]``r tidy_cafl_2[8, 1]` +
+`r tidy_cafl_2[9, 3]``r tidy_cafl_2[9, 1]` +
+`r tidy_cafl_2[10, 3]``r tidy_cafl_2[10, 1]` + \\
+`r tidy_cafl_2[11, 3]``r tidy_cafl_2[11, 1]` +
+`r tidy_cafl_2[12, 3]``r tidy_cafl_2[12, 1]` +
+`r tidy_cafl_2[13, 3]``r tidy_cafl_2[13, 1]` + \\
+`r tidy_cafl_2[14, 3]``r tidy_cafl_2[14, 1]` +
+`r tidy_cafl_2[15, 3]``r tidy_cafl_2[15, 1]` +
+`r tidy_cafl_2[16, 3]``r tidy_cafl_2[16, 1]`$$
+
+The prediction error of this model is **`r prettyNum(minimized$MSE, big.mark = ',')`**. 
+
+We then use these predictors in OLS and find the prediction error is **`r set.seed(42); prettyNum(cv.glmnet(x_matrix_flca2, y_violent_crimes, lambda = c(0, 1))$cvm[1], big.mark = ',')`**.
+
+```{r results = 'asis'}
+fit_cafl_6 <- lm(as.formula(paste0("violentcrimes.perpop ~ ", paste0(predictors(model), collapse = " + "))), 
+                 data = data_cafl)
+
+tidy_cafl_3 <- 
+    tidy(fit_cafl_6) %>% 
+    mutate(isIntercept = ifelse(term == "(Intercept)", 0, 1)) %>% 
+    arrange(isIntercept, p.value) %>%
+    select(-isIntercept)
+
+tidy_cafl_3 %>% pander()
+```
+
+We see there are now predicators that are not significant at the 0.05 significance level.
+
+$$violentcrimes.perpop = `r tidy_cafl_3[1, 2]` + 
+`r tidy_cafl_3[2, 2]``r tidy_cafl_3[2, 1]` +
+`r tidy_cafl_3[3, 2]``r tidy_cafl_3[3, 1]` +
+`r tidy_cafl_3[4, 2]``r tidy_cafl_3[4, 1]` + \\
+`r tidy_cafl_3[5, 2]``r tidy_cafl_3[5, 1]` +
+`r tidy_cafl_3[6, 2]``r tidy_cafl_3[6, 1]` +
+`r tidy_cafl_3[7, 2]``r tidy_cafl_3[7, 1]` + \\
+`r tidy_cafl_3[8, 2]``r tidy_cafl_3[8, 1]` +
+`r tidy_cafl_3[9, 2]``r tidy_cafl_3[9, 1]` +
+`r tidy_cafl_3[10, 2]``r tidy_cafl_3[10, 1]` + \\
+`r tidy_cafl_3[11, 2]``r tidy_cafl_3[11, 1]` +
+`r tidy_cafl_3[12, 2]``r tidy_cafl_3[12, 1]` +
+`r tidy_cafl_3[13, 2]``r tidy_cafl_3[13, 1]` + \\
+`r tidy_cafl_3[14, 2]``r tidy_cafl_3[14, 1]` +
+`r tidy_cafl_3[15, 2]``r tidy_cafl_3[15, 1]` +
+`r tidy_cafl_3[16, 2]``r tidy_cafl_3[16, 1]`$$
+
+
+For example, holding all other variables constant in a community,
+
++ An increase in 1% of **black residents**, increases the number of violent crimes per person by **`r tidy_cafl_3[2, 2]`**.
++ An increase in 1% of **males that that are divorced**, increases the number of violent crimes per person by **`r tidy_cafl_3[3, 2]`**.
++ An increase in 1% of **Asian residences**, increases the number of violent crimes per person by **`r tidy_cafl_3[3, 2]`**.
++ An increase in 1% of **families with kids and 2 parents**, decreases the number of violent crimes per person by **`r tidy_cafl_3[4, 2]`**.
++ An increase in 1% of **English only speakers**, decreases the number of violent crimes per person by **`r tidy_cafl_3[5, 2]`**.
++ An increase in 1% of **working mothers**, decreases the number of violent crimes per person by **`r tidy_cafl_3[6, 2]`**.
++ An increase in 1% of **occupied houses**, decreases the number of violent crimes per person by **`r tidy_cafl_3[7, 2]`**.
+
+This is only the first seven variables, but such statements could be applied to all predictors.
+
+The equation from ElasticNet and OLS are similar in the respect that they contain the same predictors (this is by design), but the coefficient estimates are slightly different. 
+
+
+
+
