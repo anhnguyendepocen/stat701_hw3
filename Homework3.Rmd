@@ -317,7 +317,7 @@ coeffiecients_df <-
 
 betas_above_3 <- 
     coeffiecients_df %>% 
-    filter(is.na(estimate) & row_number() > 4) %>% 
+    filter(!is.na(estimate) & row_number() > 4) %>% 
     select(coeffiecient) %>% 
     unlist() %>% 
     stringr::str_extract("(\\d+)")
