@@ -350,7 +350,7 @@ For a model with one predictor, the estimates is very close to the actual coeffi
 
 $$Y = `r coef(fit7, 1)[[1]]` + `r coef(fit7, 1)[[2]]`X^7$$
 
-Now using lasso,
+Now using Lasso,
 
 ```{r}
 xmat2 = model.matrix(y ~ poly(x, 10, raw = T), data = data_df2)[, -1]
@@ -383,7 +383,7 @@ Lasso only selects the intercept term and not $X^7$ and the intercept is quite o
 
 ## Part 1
 
-The map below shows the mean of the `pct.unemployed` variable in `CrimeData.csv`. This metric does not make much sense because it the average of a percent of a subset of communities in the US. This is to demonstrate the functionality.
+The map below shows the mean of the `pct.unemployed` variable in `CrimeData.csv`. This metric does not make much sense because it the average of a percent of a subset of communities in the US. This map is only to demonstrate the functionality.
 
 ```{r}
 crime_data <- readr::read_csv(paste0(data_dir, "CrimeData.csv"), na = c("","?"))
@@ -419,7 +419,7 @@ highchart() %>%
 ```
 
 
-The map below shows the population by county from the `CrimeData.csv` dataset. There are many communities in the dataset that are missing county codes and many counties are missing all the communities. Again, this is to demonstrate the functionality.
+The map below shows the population by county from the `CrimeData.csv` dataset. There are many communities in the dataset that are missing county codes and many counties are missing all the communities. Again, this map is only to demonstrate the functionality.
 
 ```{r}
 data("uscountygeojson")
@@ -468,7 +468,7 @@ data_cafl <-
     filter(complete.cases(.))
 ```
 
-From the `CrimeData.csv` dataset we extract the data for only the states CA and FL. In addition, we select only variables from following the process used in Lecture 6 and remove missing values. As a result we have `r nrow(data_cafl)` observation and `r ncol(data_cafl)` variables.
+From the `CrimeData.csv` dataset we extract the data for only the states CA and FL. In addition, we select only variables from following the process used in Lecture 6 and remove missing values. As a result we have `r nrow(data_cafl)` observations and `r ncol(data_cafl)` variables.
 
 ### (A)
 
@@ -538,7 +538,7 @@ tidy_cafl_1 <- tidy(fit_cafl_4) %>% arrange(p.value)
 tidy_cafl_1 %>% pander()
 ```
 
-Though the requirements of the problem state to include variables with $p$-values less than 0.05, in order to create a parsimonious linear model we will exclude the variable `pct.house.vacant` as this does provide much more explanatory power. The BIC criteria, which has a much harsher complexity penalty than Cp, indicates 4 variables is optimal and we will follow this heuristic. Moreover, we believe in the maxim that simpler models are always better.
+Though the requirements of the problem state to include variables with $p$-values less than 0.05, in order to create a parsimonious linear model we will exclude the variable `pct.house.vacant` as this does not provide much more explanatory power. The BIC criteria, which has a much harsher complexity penalty than Cp, indicates 4 variables is optimal and we will follow this heuristic. Moreover, we believe in the maxim that simpler models are always better.
 
 The final model is 
 
@@ -551,8 +551,8 @@ $$violentcrimes.perpop = `r tidy_cafl_1[1, 2]` +
 
 Holding all other variables constant in a community,
 
-+ An increase in 1% of **families with kids and 2 parents**, decreases the number of violent crimes per person by **`r tidy_cafl_1[2, 2]`**.
-+ An increase in 1% of **families with kids with unmarried parents**, increases the number of violent crimes per person by **`r tidy_cafl_1[3, 2]`**.
++ An increase in 1% of **families with kids with unmarried parents**, increases the number of violent crimes per person by **`r tidy_cafl_1[2, 2]`**.
++ An increase in 1% of **families with kids and 2 parents**, decreases the number of violent crimes per person by **`r tidy_cafl_1[3, 2]`**.
 + An increase in 1% of **black residents**, increases the number of violent crimes per person by **`r tidy_cafl_1[4, 2]`**.
 + An increase in 1% of **the number of shelters**, increases the number of violent crimes per person by **`r tidy_cafl_1[5, 2]`**.
 
@@ -663,7 +663,7 @@ tidy_cafl_3 <-
 tidy_cafl_3 %>% pander()
 ```
 
-We see there are now predicators that are not significant at the 0.05 significance level.
+We see there are predictors that are not significant at the 0.05 significance level.
 
 $$violentcrimes.perpop = `r tidy_cafl_3[1, 2]` + 
 `r tidy_cafl_3[2, 2]``r tidy_cafl_3[2, 1]` +
